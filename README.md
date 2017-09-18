@@ -1,5 +1,18 @@
-# R3st FS
-_The millenial filesystem_
+# R3stFs
+A remote filesystem made wit FUSE and a restful back end.
 
-## What is it
-This is an easy to deploy RESTful remote file system
+``` bash
+$ go build
+$ echo "some text" > /var/ear7h/user/file.txt
+$ ./client ./fs
+```
+
+__TODO__
+* comment code
+* write tests
+* create logger
+* correct renames
+
+__DONE__
+* read
+* write
