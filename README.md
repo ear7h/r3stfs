@@ -2,9 +2,11 @@
 A remote filesystem made wit FUSE and a restful back end.
 
 ``` bash
-$ go build
+$ go build ./client
+$ go build ./server
 $ echo "some text" > /var/ear7h/user/file.txt
-$ ./client ./fs
+$ server/server
+$ client/client ./fs
 ```
 
 __TODO__
