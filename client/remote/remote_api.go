@@ -51,7 +51,7 @@ func Post(urlPath string, body io.Reader) (*http.Response, error){
 }
 
 func Put(urlPath string, body io.Reader, mode os.FileMode) (*http.Response, error){
-	p := path.Join("/",urlPath)
+	p := path.Join("/", urlPath)
 	u := fmt.Sprintf("http://%s%s", g_host, p)
 
 	req, err := http.NewRequest(http.MethodPut, u, body)
