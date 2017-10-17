@@ -1,4 +1,5 @@
 .idea
 .DS_Store
+client/ear7h_cache
 client/client
 server/server

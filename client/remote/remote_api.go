@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"path"
 )
 
 var g_host, g_user, g_token string
@@ -50,7 +51,8 @@ func Post(urlPath string, body io.Reader) (*http.Response, error){
 }
 
 func Put(urlPath string, body io.Reader, mode os.FileMode) (*http.Response, error){
-	u := fmt.Sprintf("http://%s", g_host + urlPath)
+	p := path.Join("/",urlPath)
+	u := fmt.Sprintf("http://%s%s", g_host, p)
 
 	req, err := http.NewRequest(http.MethodPut, u, body)
 	if err != nil {

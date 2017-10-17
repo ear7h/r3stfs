@@ -39,11 +39,12 @@ func main() {
 	remote.Login("localhost:8080", "user", "")
 
 	//make pathfs
-	nfs := pathfs.NewPathNodeFs(&R3stFs{FileSystem: pathfs.NewDefaultFileSystem()}, &pathfs.PathNodeFsOptions{false, true})
+	nfs := pathfs.NewPathNodeFs(&R3stFs{FileSystem: pathfs.NewDefaultFileSystem()}, &pathfs.PathNodeFsOptions{false, false})
 	server, _, err := nodefs.MountRoot(mtpt, nfs.Root(), nil)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
 	}
+	nfs.SetDebug(true)
 
 	//cleanup
 	runtime.AddCleaner(func(signal os.Signal) {

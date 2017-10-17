@@ -34,6 +34,8 @@ func (fr *FsRequest) error(w http.ResponseWriter, err error) {
 func (fr *FsRequest) serveHead(w http.ResponseWriter, r *http.Request) {
 	c := make(chan error, 1)
 
+	fmt.Println(r.Header)
+
 	fr.writeHead(w, c)
 
 	err := <-c

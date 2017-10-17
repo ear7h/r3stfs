@@ -14,12 +14,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"github.com/hanwen/go-fuse/fuse/pathfs"
 
+	"r3stfs/client/log"
 	"r3stfs/client/remote"
 )
 
@@ -27,30 +29,44 @@ type R3stFs struct {
 	pathfs.FileSystem
 }
 
-func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
-	//debug
-	fmt.Println("get attr: ", name)
+func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr, status fuse.Status) {
+	log.Func(name, context)
+	defer log.Return(attr, status)
 
-	cs := trustCache(name)
+	if cacheOK(name) {
+		var err error
+		sysStat := syscall.Stat_t{}
 
-	if cs == CACHE_GOOD {
-		attr, err := os.Stat(name)
+		if name == "" {
+			err = syscall.Stat(localPath(name), &sysStat)
+		} else {
+			err = syscall.Lstat(localPath(name), &sysStat)
+		}
 
 		if err != nil {
-			return nil, fuse.ToStatus(err)
+			fmt.Println("err")
+			attr, status = nil, fuse.ToStatus(err)
+			return
 		}
-		return fuse.ToAttr(attr), fuse.OK
+
+		attr, status = &fuse.Attr{}, fuse.OK
+		attr.FromStat(&sysStat)
+
+		return
 	}
 
 	resp, err := remote.Head(name)
 	if err != nil {
-		return nil, fuse.ToStatus(err)
+		attr, status = nil, fuse.ToStatus(err)
+		return
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fuse.ENOENT
+		attr, status = nil, fuse.ENOENT
+		return
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fuse.EAGAIN
+		attr, status = nil, fuse.EAGAIN
+		return
 	}
 
 	if resp.Header["Is-Dir"][0] == "true" {
@@ -64,10 +80,11 @@ func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse
 		modTime, err := time.Parse(time.RFC1123, strings.Join(resp.Header["Mode"], " "))
 
 		//return dir
-		return &fuse.Attr{
+		attr, status = &fuse.Attr{
 			Mtime: uint64(modTime.Unix()),
 			Mode:  uint32(mode),
 		}, fuse.OK
+		return
 	}
 
 	size, err := strconv.ParseInt(resp.Header["Content-Length"][0], 10, 64)
@@ -85,26 +102,29 @@ func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse
 	modTime, err := time.Parse(time.RFC1123, strings.Join(resp.Header["Mode"], " "))
 
 	//return regular file
-	return &fuse.Attr{
+	attr, status = &fuse.Attr{
 		Size:  uint64(size),
 		Mtime: uint64(modTime.Unix()),
 		Mode:  uint32(mode),
 	}, fuse.OK
+
+	return
 }
 
-func (rfs *R3stFs) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntry, code fuse.Status) {
-	//debug
-	fmt.Println("open dir:")
+func (rfs *R3stFs) OpenDir(name string, context *fuse.Context) (dir []fuse.DirEntry, status fuse.Status) {
+	log.Func(name, context)
+	defer log.Return(dir, status)
 
 	resp, err := remote.Get(name)
 	if err != nil {
-		return nil, fuse.ToStatus(err)
+		dir, status = nil, fuse.ToStatus(err)
+		return
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fuse.ENOENT
+		dir, status = nil, fuse.ENOENT
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fuse.EAGAIN
+		dir, status = nil, fuse.EAGAIN
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -131,94 +151,127 @@ func (rfs *R3stFs) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntr
 			}
 		}
 
-		c = append(c, fuse.DirEntry{Name: arr[0], Mode: uint32(i)})
+		dir = append(dir, fuse.DirEntry{Name: arr[0], Mode: uint32(i)})
 	}
 
-	return c, fuse.OK
+	status = fuse.OK
+	return
 }
 
-func (rfs *R3stFs) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
-	//debug
-	fmt.Println("open: ", name, " ==========")
-
-	cs := trustCache(name)
-
-	if cs == CACHE_ENOENT {
-		return nil, fuse.ENOENT
-	}
+func (rfs *R3stFs) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, status fuse.Status) {
+	log.Func(name, flags, context)
+	defer log.Return(file, status)
 
 use_cache:
-	if cs == CACHE_GOOD {
+	if cacheOK(name) {
 		f, err := os.OpenFile(localPath(name), int(flags), 0)
 		if err != nil {
 			fmt.Println("open err: ", err)
 		}
-		return NewLoopbackFile(f), fuse.OK
+		file, status = NewLoopbackFile(f), fuse.OK
+		return
+
 	}
 
 	//get file remotely
 	resp, err := remote.Get(name)
 	if err != nil {
-		return nil, fuse.ToStatus(err)
+		file, status = nil, fuse.ToStatus(err)
+		return
 	}
 
 	f, err := os.OpenFile(localPath(name), os.O_CREATE|os.O_WRONLY, 0700)
 	if err != nil {
-		return nil, fuse.ToStatus(err)
+		file, status = nil, fuse.ToStatus(err)
+		return
 	}
 
 	b, err := io.Copy(f, resp.Body)
 	if err != nil {
-		fmt.Println("error making local copy: ",err)
-		return nil, fuse.ToStatus(err)
+		file, status = nil, fuse.ToStatus(err)
+		return
 	}
 
+	// close readers/writers
+	resp.Body.Close()
+	f.Close()
 
 	fmt.Printf("%d bytes written locally", b)
 
-	f.Close()
-
 	//file downloaded successfully
-	cs = CACHE_GOOD
 	goto use_cache
 }
 
-func (rfs *R3stFs) Create(name string, flags uint32, mode uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
+func (rfs *R3stFs) Create(name string, flags uint32, mode uint32, context *fuse.Context) (file nodefs.File, status fuse.Status) {
+	log.Func(name, flags, mode, context)
+	defer log.Return(file, status)
+
 	f, err := os.OpenFile(localPath(name), os.O_CREATE|int(flags), os.FileMode(mode))
 	if err != nil {
-		return nil, fuse.ToStatus(err)
+		file, status = nil, fuse.ToStatus(err)
+		return
 	}
 
-	//the loopback file will send a PUT request on release, updating the remote
+	_, err = remote.Put(name, f, os.FileMode(mode))
+	if err != nil {
+		file, status = nil, fuse.ToStatus(err)
+		return
+	}
 
-	return NewLoopbackFile(f), fuse.OK
+	file, status = NewLoopbackFile(f), fuse.OK
+	return
 }
 
-func (rfs *R3stFs) Rename(oldName string, newName string, context *fuse.Context) (code fuse.Status) {
-	fmt.Println("rename")
+func (rfs *R3stFs) Rename(oldName string, newName string, context *fuse.Context) (status fuse.Status) {
+	log.Func(oldName, newName, context)
+	defer log.Return(status)
+
 	//send message to server
 
 	f, err := os.OpenFile(localPath(oldName), os.O_RDONLY, 0)
 	if err != nil {
-		return fuse.ToStatus(err)
+		status = fuse.ToStatus(err)
+		return
 	}
 	stat, err := f.Stat()
 	if err != nil {
-		return fuse.ToStatus(err)
+		status = fuse.ToStatus(err)
+		return
 	}
 
 	_, err = remote.Put(newName, f, stat.Mode())
 	if err != nil {
-		return fuse.ToStatus(err)
+		status = fuse.ToStatus(err)
+		return
 	}
 
 	_, err = remote.Delete(oldName)
 	if err != nil {
-		return fuse.ToStatus(err)
+		status = fuse.ToStatus(err)
+		return
+	}
+	err = os.Rename(localPath(oldName), localPath(newName))
+	if err != nil {
+		status = fuse.ToStatus(err)
+		return
 	}
 
-	return fuse.ToStatus(os.Rename(localPath(oldName), localPath(newName)))
+	status = fuse.OK
+	return
 }
 
+func (rfs *R3stFs) Unlink(name string, context *fuse.Context) (code fuse.Status) {
+	return fuse.ToStatus(syscall.Unlink(localPath(name)))
+}
 
+func (rfs *R3stFs) Rmdir(name string, context *fuse.Context) (code fuse.Status) {
+	return fuse.ToStatus(syscall.Rmdir(localPath(name)))
+}
 
+func (rfs *R3stFs) Access(name string, mode uint32, context *fuse.Context) fuse.Status {
+	return fuse.ToStatus(syscall.Access(localPath(name), mode))
+}
+
+func (rfs *R3stFs) Truncate(path string, offset uint64, context *fuse.Context) (code fuse.Status) {
+	return fuse.ToStatus(os.Truncate(localPath(path), int64(offset)))
+}

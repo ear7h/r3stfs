@@ -10,6 +10,7 @@ $ client/client ./fs
 ```
 
 __TODO__
+* rename files
 * comment code
 * write tests
 * create logger
