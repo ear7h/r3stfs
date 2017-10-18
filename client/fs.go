@@ -27,13 +27,14 @@ import (
 
 type R3stFs struct {
 	pathfs.FileSystem
+	client *remote.Client
 }
 
 func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr, status fuse.Status) {
 	log.Func(name, context)
 	defer log.Return(attr, status)
 
-	if cacheOK(name) {
+	if cacheOK(name, rfs.client) {
 		var err error
 		sysStat := syscall.Stat_t{}
 
@@ -55,7 +56,7 @@ func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr,
 		return
 	}
 
-	resp, err := remote.Head(name)
+	resp, err := rfs.client.Head(name)
 	if err != nil {
 		attr, status = nil, fuse.ToStatus(err)
 		return
@@ -70,7 +71,7 @@ func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr,
 	}
 
 	if resp.Header["Is-Dir"][0] == "true" {
-		mode, err := strconv.ParseInt(resp.Header["File-Mode"][0], 8, 32)
+		mode, err := strconv.ParseInt(resp.Header["file-Mode"][0], 8, 32)
 		if err != nil {
 			mode = 0
 		}
@@ -92,7 +93,7 @@ func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr,
 		size = 0
 	}
 
-	mode, err := strconv.ParseInt(resp.Header["File-Mode"][0], 8, 32)
+	mode, err := strconv.ParseInt(resp.Header["file-Mode"][0], 8, 32)
 	if err != nil {
 		mode = 0
 	}
@@ -115,7 +116,7 @@ func (rfs *R3stFs) OpenDir(name string, context *fuse.Context) (dir []fuse.DirEn
 	log.Func(name, context)
 	defer log.Return(dir, status)
 
-	resp, err := remote.Get(name)
+	resp, err := rfs.client.Get(name)
 	if err != nil {
 		dir, status = nil, fuse.ToStatus(err)
 		return
@@ -163,18 +164,18 @@ func (rfs *R3stFs) Open(name string, flags uint32, context *fuse.Context) (file 
 	defer log.Return(file, status)
 
 use_cache:
-	if cacheOK(name) {
+	if cacheOK(name, rfs.client) {
 		f, err := os.OpenFile(localPath(name), int(flags), 0)
 		if err != nil {
 			fmt.Println("open err: ", err)
 		}
-		file, status = NewLoopbackFile(f), fuse.OK
+		file, status = NewLoopbackFile(f, rfs.client), fuse.OK
 		return
 
 	}
 
 	//get file remotely
-	resp, err := remote.Get(name)
+	resp, err := rfs.client.Get(name)
 	if err != nil {
 		file, status = nil, fuse.ToStatus(err)
 		return
@@ -212,13 +213,13 @@ func (rfs *R3stFs) Create(name string, flags uint32, mode uint32, context *fuse.
 		return
 	}
 
-	_, err = remote.Put(name, f, os.FileMode(mode))
+	_, err = rfs.client.Put(name, f)
 	if err != nil {
 		file, status = nil, fuse.ToStatus(err)
 		return
 	}
 
-	file, status = NewLoopbackFile(f), fuse.OK
+	file, status = NewLoopbackFile(f, rfs.client), fuse.OK
 	return
 }
 
@@ -228,28 +229,24 @@ func (rfs *R3stFs) Rename(oldName string, newName string, context *fuse.Context)
 
 	//send message to server
 
-	f, err := os.OpenFile(localPath(oldName), os.O_RDONLY, 0)
-	if err != nil {
-		status = fuse.ToStatus(err)
-		return
-	}
-	stat, err := f.Stat()
+	f, err := os.OpenFile(localPath(oldName), os.O_RDONLY, 0700)
 	if err != nil {
 		status = fuse.ToStatus(err)
 		return
 	}
 
-	_, err = remote.Put(newName, f, stat.Mode())
+	_, err = rfs.client.Put(newName, f)
 	if err != nil {
 		status = fuse.ToStatus(err)
 		return
 	}
 
-	_, err = remote.Delete(oldName)
+	_, err = rfs.client.Delete(oldName)
 	if err != nil {
 		status = fuse.ToStatus(err)
 		return
 	}
+
 	err = os.Rename(localPath(oldName), localPath(newName))
 	if err != nil {
 		status = fuse.ToStatus(err)

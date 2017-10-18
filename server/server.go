@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"syscall"
 )
 
 type FsRequest struct {
@@ -62,36 +63,36 @@ Content-Length: 1000 //in bytes
 func (fr *FsRequest) writeHead(w http.ResponseWriter, errc chan error) {
 	defer close(errc)
 
-	f, err := store.Open(fr.user, fr.file)
+	fi, err := store.Stat(fr.user, fr.file)
 	if err != nil {
 		errc <- err
 		return
 	}
-	defer f.Close()
 
-	stat, err := f.Stat()
-	if err != nil {
-		errc <- err
-		return
+	stat := fi.Sys().(*syscall.Stat_t)
 
+	atime := stat.Atimespec.Sec
+	mtime := stat.Mtimespec.Sec
+
+
+	mode := strconv.FormatInt(int64(fi.Mode() & 0777), 8)
+
+	w.Header().Set("Name", fi.Name())
+	w.Header().Set("File-Mode", mode)
+	w.Header().Set("Is-Dir", strconv.FormatBool(fi.Mode().IsDir()))
+	w.Header().Set("Last-Modified", fi.ModTime().Format(time.RFC1123))
+	w.Header().Set("Mtime", strconv.FormatInt(mtime, 10))
+	w.Header().Set("Atime", strconv.FormatInt(atime, 10))
+
+	if !fi.IsDir() {
+		w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
 	}
 
-
-	s := md5.New()
-	io.Copy(s, f)
-	md5str := base64.StdEncoding.EncodeToString(s.Sum(nil))
-	mode := strconv.FormatInt(int64(stat.Mode() & 0777), 8)
-
-	w.Header()["Name"] = []string{f.Name()}
-	w.Header()["File-Mode"] = []string{mode}
-	w.Header()["Is-Dir"] = []string{strconv.FormatBool(stat.Mode().IsDir())}
-	w.Header()["Last-Modified"] = []string{stat.ModTime().Format(time.RFC1123)}
-	w.Header()["MD5"] = []string{md5str}
-	if !stat.IsDir() {
-		w.Header()["Content-Length"] = []string{strconv.FormatInt(stat.Size(), 10)}
-	}
-
+	// tell caller no errors were encountered
 	errc <- nil
+
+	// assert old times
+
 }
 
 //gets file mode from request header
@@ -174,18 +175,39 @@ func (fr *FsRequest) ServePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := store.OpenFile(fr.user, fr.file, os.O_CREATE|os.O_WRONLY, mode)
+	f, err := store.OpenFile(fr.user, fr.file, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		fr.error(w, err)
 		return
 	}
+	defer f.Close()
 
 	p := f.Name()
 
 	i, err := io.Copy(f, r.Body)
+	defer r.Body.Close()
 	if err != nil {
 		fr.error(w, err)
 	}
+
+	//assert atime and mtime
+	atime, err := strconv.ParseInt(r.Header.Get("Atime"), 10, 64)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("atime header could not be parsed"))
+		return
+	}
+	mtime, err := strconv.ParseInt(r.Header.Get("Mtime"), 10, 64)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("mtime header could not be parsed"))
+		return
+	}
+
+
+	// set atime and mtime according to request
+	store.Chtimes(fr.user, fr.file, time.Unix(atime, 0), time.Unix(mtime, 0))
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("wrote " + strconv.Itoa(int(i)) + " bytes to " + p))
 }

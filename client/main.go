@@ -36,10 +36,13 @@ func main() {
 	G_REMOTE_DOMAIN = "localhost:8080"
 
 	//setup api caller
-	remote.Login("localhost:8080", "user", "")
+	client := remote.Login("localhost:8080", "user", "")
 
 	//make pathfs
-	nfs := pathfs.NewPathNodeFs(&R3stFs{FileSystem: pathfs.NewDefaultFileSystem()}, &pathfs.PathNodeFsOptions{false, false})
+	nfs := pathfs.NewPathNodeFs(&R3stFs{
+		FileSystem: pathfs.NewDefaultFileSystem(),
+		client:client,
+	}, &pathfs.PathNodeFsOptions{false, false})
 	server, _, err := nodefs.MountRoot(mtpt, nfs.Root(), nil)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)

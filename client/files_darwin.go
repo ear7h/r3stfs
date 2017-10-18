@@ -54,10 +54,10 @@ func (f *loopback) Allocate(off uint64, sz uint64, mode uint32) fuse.Status {
 	}
 
 	// Linux version for reference:
-	// err := syscall.Fallocate(int(f.File.Fd()), mode, int64(off), int64(sz))
+	// err := syscall.Fallocate(int(f.file.Fd()), mode, int64(off), int64(sz))
 
 	f.lock.Lock()
-	_, _, errno := syscall.Syscall(syscall.SYS_FCNTL, f.File.Fd(), uintptr(syscall.F_PREALLOCATE), uintptr(unsafe.Pointer(&k)))
+	_, _, errno := syscall.Syscall(syscall.SYS_FCNTL, f.file.Fd(), uintptr(syscall.F_PREALLOCATE), uintptr(unsafe.Pointer(&k)))
 	f.lock.Unlock()
 	if errno != 0 {
 		return fuse.ToStatus(errno)
@@ -96,7 +96,7 @@ func (f *loopback) Utimens(a *time.Time, m *time.Time) fuse.Status {
 	}
 
 	f.lock.Lock()
-	err := syscall.Futimes(int(f.File.Fd()), tv)
+	err := syscall.Futimes(int(f.file.Fd()), tv)
 	f.lock.Unlock()
 	return fuse.ToStatus(err)
 }

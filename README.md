@@ -13,9 +13,11 @@ __TODO__
 * rename files
 * comment code
 * write tests
-* create logger
-* correct renames
+* refactor cache to be package
+* make command line util
 
 __DONE__
 * read
 * write
+* rename
+* delete

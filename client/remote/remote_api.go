@@ -1,112 +1,119 @@
 package remote
 
 import (
-	"io"
-	"net/http"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"strconv"
 	"path"
+	"strconv"
+	"syscall"
+	"time"
 )
 
-var g_host, g_user, g_token string
-var g_httpClient http.Client
-
-func writeHeader(r *http.Request) {
-	b64Username := base64.StdEncoding.EncodeToString([]byte(g_user))
-
-	r.Header["Authorization"] = []string{"basic " + b64Username}
-
-	return
+type Client struct {
+	host, user, token string
+	b64Username       string
+	http              http.Client
 }
 
 //get expecting a file
-func Get(urlPath string) (*http.Response, error){
+func (c *Client) Get(urlPath string) (*http.Response, error) {
 
-	u := fmt.Sprint("http://", g_host, "/", urlPath)
+	u := fmt.Sprint("http://", c.host, "/", urlPath)
 
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	writeHeader(req)
+	req.Header.Set("Authorization", "basic "+c.b64Username)
 
-	return g_httpClient.Do(req)
+	return c.http.Do(req)
 
 }
 
-func Post(urlPath string, body io.Reader) (*http.Response, error){
-	u := fmt.Sprint("http://", g_host, "/", urlPath)
+func (c *Client) Post(urlPath string, body io.Reader) (*http.Response, error) {
+	u := fmt.Sprint("http://", c.host, "/", urlPath)
 
 	req, err := http.NewRequest(http.MethodPost, u, body)
 	if err != nil {
 		return nil, err
 	}
 
-	writeHeader(req)
+	req.Header.Set("Authorization", "basic "+c.b64Username)
 
-	return g_httpClient.Do(req)
+	return c.http.Do(req)
 }
 
-func Put(urlPath string, body io.Reader, mode os.FileMode) (*http.Response, error){
+func (c *Client) Put(urlPath string, file *os.File) (*http.Response, error) {
 	p := path.Join("/", urlPath)
-	u := fmt.Sprintf("http://%s%s", g_host, p)
+	u := fmt.Sprintf("http://%s%s", c.host, p)
 
-	req, err := http.NewRequest(http.MethodPut, u, body)
+	fi, err := file.Stat()
+	if err == nil {
+		return nil, err
+	}
+
+	mode := fi.Mode()
+	stat := fi.Sys().(*syscall.Stat_t)
+	atime := stat.Mtimespec.Sec
+	mtime := stat.Mtimespec.Sec
+
+	req, err := http.NewRequest(http.MethodPut, u, file)
 	if err != nil {
 		return nil, err
 	}
 
-	writeHeader(req)
 	req.Header.Set("File-Mode", strconv.FormatInt(int64(mode), 8))
+	req.Header.Set("Atime", strconv.FormatInt(atime, 10))
+	req.Header.Set("Mtime", strconv.FormatInt(mtime, 10))
 
-	return g_httpClient.Do(req)
+	req.Header.Set("Authorization", "basic "+c.b64Username)
+
+	return c.http.Do(req)
 }
 
-func Head(urlPath string) (*http.Response, error) {
-	u := fmt.Sprint("http://", g_host, "/", urlPath)
+func (c *Client) Head(urlPath string) (*http.Response, error) {
+	u := fmt.Sprint("http://", c.host, "/", urlPath)
 
 	req, err := http.NewRequest(http.MethodHead, u, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	writeHeader(req)
+	req.Header.Set("Authorization", "basic "+c.b64Username)
 
-	return g_httpClient.Do(req)
+	return c.http.Do(req)
 }
 
-func Delete(urlPath string) (*http.Response, error){
-	u := fmt.Sprint("http://", g_host, "/", urlPath)
+func (c *Client) Delete(urlPath string) (*http.Response, error) {
+	u := fmt.Sprint("http://", c.host, "/", urlPath)
 
 	req, err := http.NewRequest(http.MethodDelete, u, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	writeHeader(req)
+	req.Header.Set("Authorization", "basic "+c.b64Username)
 
-	return g_httpClient.Do(req)
+	return c.http.Do(req)
 }
 
-//wrapper for head
-//TODO: optimize as own request
-func Sum(urlPath string) (string, error) {
-	resp, err := Head(urlPath)
-	if err != nil {
-		return "", err
+//actual login, returns token
+func login(host, user, pass string) string {
+	return ""
+}
+
+func Login(host, user, pass string) *Client {
+	return &Client{
+		host:        host,
+		user:        user,
+		token:       login(host, user, pass),
+		b64Username: base64.StdEncoding.EncodeToString([]byte(user)),
+		http: http.Client{
+			Timeout: 10 * time.Second,
+		},
 	}
-
-	return resp.Header.Get("MD5"), nil
-}
-
-func Login(host, user, pass string) {
-	g_host = host
-	g_user = user
-	g_token = pass
-
-	//get token
-
 }

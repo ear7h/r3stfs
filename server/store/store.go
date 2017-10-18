@@ -3,12 +3,21 @@ package store
 import (
 	"os"
 	"path"
+	"syscall"
+	"time"
 )
 
 const STORAGE_DIR = "/var/ear7h/r3stfs"
 
 func absPath(user, file string) string {
 	return path.Join(STORAGE_DIR, "users", user, file)
+}
+
+func Stat(user, file string) (fi os.FileInfo, err error) {
+	p := absPath(user, file)
+
+	fi, err = os.Stat(p)
+	return
 }
 
 func Open(user, file string) (*os.File, error) {
@@ -31,4 +40,10 @@ func Delete(user, file string) error {
 	p := absPath(user, file)
 
 	return os.Remove(p)
+}
+
+func Chtimes(user, file string, atime, mtime time.Time) {
+	p := absPath(user, file)
+
+	os.Chtimes(p, atime, mtime)
 }

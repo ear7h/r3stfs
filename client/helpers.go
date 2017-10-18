@@ -11,9 +11,9 @@ import (
 
 
 //TODO: implement MD5
-func cacheOK(name string) bool {
+func cacheOK(name string, client *remote.Client) bool {
 
-	resp, err := remote.Head(name)
+	resp, err := client.Head(name)
 	if err != nil {
 		notify := notificator.New(notificator.Options{
 			AppName: "r3stfs",
