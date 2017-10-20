@@ -16,15 +16,17 @@ import (
 )
 
 // LoopbackFile delegates all operations back to an underlying os.file.
-func NewLoopbackFile(f *os.File, client *remote.Client) nodefs.File {
+func NewLoopbackFile(f *os.File, restPath string, client *remote.Client) nodefs.File {
 	return &loopback{
 		file: f,
+		restPath: restPath,
 		remote: client,
 	}
 }
 
 type loopback struct {
 	file   *os.File
+	restPath string //path passed in urls
 	remote *remote.Client
 
 	// os.file is not threadsafe. Although fd themselves are
@@ -81,9 +83,9 @@ func (f *loopback) Release() {
 		return
 	}
 
-	fmt.Println("filename: ", name[len(localPath("")):])
+	fmt.Println("filename: ", f.restPath)
 
-	_, err = f.remote.Put(name[len(localPath("")):], fileToSend)
+	_, err = f.remote.Put(f.restPath, fileToSend)
 	if err != nil {
 		fmt.Println(err)
 	}

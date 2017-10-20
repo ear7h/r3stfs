@@ -10,7 +10,7 @@ func init() {
 	fmt.Println("will log stuff!")
 }
 
-func Func(params ...interface{}) {
+func Func(name string, params ...interface{}) {
 	pc, _, _, ok := runtime.Caller(1)
 	if !ok {
 		fmt.Println(append([]interface{}{"poop"}, params...)...)
@@ -19,17 +19,22 @@ func Func(params ...interface{}) {
 	ts := time.Now().Format(time.Stamp)
 	fn := runtime.FuncForPC(pc).Name()
 
-	fmt.Printf("%s | %s called : ", ts, fn)
+	if name == "" {
+		name = "/"
+	}
+	fmt.Printf("%s | %s called : %s ", ts, fn, name)
 	fmt.Println(params...)
 }
 
 func Return(params ...interface{}) {
-	pc, _, _, ok := runtime.Caller(1)
+	ts := time.Now().Format(time.Stamp)
+
+	pc, _, _, ok := runtime.Caller(2)
 	if !ok {
-		fmt.Println(append([]interface{}{"poop"}, params...)...)
+		fmt.Printf("%s | _ returned: ", ts)
+		fmt.Println(params...)
 	}
 
-	ts := time.Now().Format(time.Stamp)
 	fn := runtime.FuncForPC(pc).Name()
 
 	fmt.Printf("%s | %s returned: ", ts, fn)

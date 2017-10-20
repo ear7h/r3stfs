@@ -8,8 +8,8 @@ import (
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"github.com/hanwen/go-fuse/fuse/pathfs"
 
-	"r3stfs/client/remote"
 	"r3stfs/client/runtime"
+	"fmt"
 )
 
 var G_LOCAL_DIR, G_REMOTE_DOMAIN string
@@ -35,19 +35,20 @@ func main() {
 
 	G_REMOTE_DOMAIN = "localhost:8080"
 
-	//setup api caller
-	client := remote.Login("localhost:8080", "user", "")
 
+	fmt.Println("logged in")
 	//make pathfs
-	nfs := pathfs.NewPathNodeFs(&R3stFs{
-		FileSystem: pathfs.NewDefaultFileSystem(),
-		client:client,
-	}, &pathfs.PathNodeFsOptions{false, false})
+	nfs := pathfs.NewPathNodeFs(
+		NewR3stFs("localhost:8080", "user", ""),
+		&pathfs.PathNodeFsOptions{false, true})
+
 	server, _, err := nodefs.MountRoot(mtpt, nfs.Root(), nil)
 	if err != nil {
-		log.Fatalf("Mount fail: %v\n", err)
+		fmt.Printf("Mount fail: %v\n", err)
+		panic(err)
 	}
-	nfs.SetDebug(true)
+
+	fmt.Println("mounted")
 
 	//cleanup
 	runtime.AddCleaner(func(signal os.Signal) {

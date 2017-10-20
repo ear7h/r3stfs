@@ -3,3 +3,6 @@
 client/ear7h_cache
 client/client
 server/server
+server/store
+server/test_store
+dump
