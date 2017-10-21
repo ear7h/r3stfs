@@ -1,3 +1,7 @@
+// Copyright 2017 Julio. All rights reserved.
+// Use of this source code is governed by the MIT
+// license that can be found in the LICENSE file.
+
 package main
 
 import (
@@ -12,7 +16,6 @@ import (
 	"fmt"
 )
 
-var G_LOCAL_DIR, G_REMOTE_DOMAIN string
 
 
 func main() {
@@ -26,17 +29,7 @@ func main() {
 
 	mtpt := flag.Arg(0)
 
-	// local dir
-	G_LOCAL_DIR = "ear7h_cache/"
-	err := os.MkdirAll(G_LOCAL_DIR, 0700)
-	if err != nil {
-		panic(err)
-	}
 
-	G_REMOTE_DOMAIN = "localhost:8080"
-
-
-	fmt.Println("logged in")
 	//make pathfs
 	nfs := pathfs.NewPathNodeFs(
 		NewR3stFs("localhost:8080", "user", ""),

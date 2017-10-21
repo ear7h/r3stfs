@@ -30,7 +30,7 @@ func doClean(sig os.Signal) {
 		v(sig)
 	}
 
-
+	fmt.Println("exiting")
 	os.Exit(1)
 }
 

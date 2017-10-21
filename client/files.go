@@ -1,5 +1,5 @@
-// Copyright 2016 the Go-FUSE Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
+// Copyright 2017 Julio. All rights reserved.
+// Use of this source code is governed by the MIT
 // license that can be found in the LICENSE file.
 
 package main
@@ -13,6 +13,7 @@ import (
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"r3stfs/client/remote"
+	"r3stfs/client/log"
 )
 
 // LoopbackFile delegates all operations back to an underlying os.file.
@@ -48,7 +49,12 @@ func (f *loopback) String() string {
 	return fmt.Sprintf("loopback(%s)", f.file.Name())
 }
 
-func (f *loopback) Read(buf []byte, off int64) (res fuse.ReadResult, code fuse.Status) {
+func (f *loopback) Read(buf []byte, off int64) (res fuse.ReadResult, status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		log.Return(res, status)
+	}()
+
 	f.lock.Lock()
 	// This is not racy by virtue of the kernel properly
 	// synchronizing the open/write/close.
@@ -70,16 +76,21 @@ func (f *loopback) Write(data []byte, off int64) (uint32, fuse.Status) {
 }
 
 func (f *loopback) Release() {
+	log.Func(f.restPath)
+	defer func() {
+		log.Return()
+	}()
 
 	//close file
 	f.lock.Lock()
 	f.file.Close()
 	f.lock.Unlock()
 
-	//send it
 	name := f.file.Name()
-	fileToSend, err := os.OpenFile(name, os.O_RDONLY, 0700)
+
+	fileToSend, err := os.OpenFile(name, os.O_RDONLY, 0600)
 	if err != nil {
+		fmt.Println("err", err)
 		return
 	}
 
@@ -91,7 +102,13 @@ func (f *loopback) Release() {
 	}
 }
 
-func (f *loopback) Flush() fuse.Status {
+func (f *loopback) Flush() (status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		log.Return(status)
+	}()
+
+
 	f.lock.Lock()
 
 	// Since Flush() may be called for each dup'd fd, we don't

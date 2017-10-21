@@ -1,3 +1,7 @@
+// Copyright 2017 Julio. All rights reserved.
+// Use of this source code is governed by the MIT
+// license that can be found in the LICENSE file.
+
 package remote
 
 import (
@@ -10,6 +14,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	"r3stfs/client/log"
 )
 
 type Client struct {
@@ -47,12 +52,17 @@ func (c *Client) Post(urlPath string, body io.Reader) (*http.Response, error) {
 	return c.http.Do(req)
 }
 
-func (c *Client) Put(urlPath string, file *os.File) (*http.Response, error) {
+func (c *Client) Put(urlPath string, file *os.File) (res *http.Response, err error) {
+	log.Func(urlPath, file.Name())
+	defer func() {
+		log.Return(res, err)
+	}()
+
 	p := path.Join("/", urlPath)
 	u := fmt.Sprintf("http://%s%s", c.host, p)
 
 	fi, err := file.Stat()
-	if err == nil {
+	if err != nil {
 		return nil, err
 	}
 
@@ -72,7 +82,8 @@ func (c *Client) Put(urlPath string, file *os.File) (*http.Response, error) {
 
 	req.Header.Set("Authorization", "basic "+c.b64Username)
 
-	return c.http.Do(req)
+	res, err = c.http.Do(req)
+	return
 }
 
 func (c *Client) Head(urlPath string) (*http.Response, error) {

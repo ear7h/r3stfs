@@ -1,18 +1,22 @@
+// Copyright 2017 Julio. All rights reserved.
+// Use of this source code is governed by the MIT
+// license that can be found in the LICENSE file.
+
 package main
 
 import (
-	"net/http"
-	"fmt"
 	"encoding/base64"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
 
 	"r3stfs/sandbox"
-	"syscall"
-	"strconv"
-	"time"
-	"strings"
-	"os"
-	"io"
-	"sync"
 )
 
 //
@@ -90,9 +94,6 @@ func writeHead(w http.ResponseWriter, userSpace sandbox.Store, file string, errc
 	atime := stat.Atimespec.Sec
 	mtime := stat.Mtimespec.Sec
 
-
-
-
 	w.Header().Set("File-Mode", strconv.FormatUint(uint64(stat.Mode), 8))
 	w.Header().Set("Is-Dir", strconv.FormatBool(fi.Mode().IsDir()))
 	w.Header().Set("Last-Modified", fi.ModTime().Format(time.RFC1123))
@@ -115,7 +116,6 @@ func writeHead(w http.ResponseWriter, userSpace sandbox.Store, file string, errc
 		time.Unix(stat.Atimespec.Unix()),
 		time.Unix(stat.Atimespec.Unix()))
 }
-
 
 // Authorization:name pass
 func auth(header string) (string, bool) {
@@ -144,7 +144,7 @@ func serveHead(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) 
 	//
 	c := make(chan error, 1)
 	var wg sync.WaitGroup
-	wg.Add(2)//wait for writehead and handler to finish
+	wg.Add(2) //wait for writehead and handler to finish
 	go writeHead(w, userSpace, r.URL.Path, c, &wg)
 
 	// check if the header was written properly
@@ -154,7 +154,6 @@ func serveHead(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) 
 		serveError(w, err)
 		return
 	}
-
 
 	fmt.Println("serveHead: okay")
 	wg.Done()
@@ -172,10 +171,9 @@ func serveGet(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) {
 	wg.Add(2) //wait for writehead and handler to finish
 	go writeHead(w, userSpace, requestPath, c, &wg)
 
-
 	//check if io is okay
 	fmt.Println("get checking error")
-	err := <- c
+	err := <-c
 	if err != nil {
 		fmt.Println("get there was error")
 		serveError(w, err)
@@ -188,7 +186,6 @@ func serveGet(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) {
 		return
 	}
 	defer f.Close()
-
 
 	stat, err := f.Stat()
 	if err != nil {
@@ -206,12 +203,11 @@ func serveGet(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) {
 		for _, v := range dir {
 
 			stat := v.Sys().(*syscall.Stat_t)
-			ret += fmt.Sprint(v.Name(), " ",strconv.FormatUint(uint64(stat.Mode), 8) , "\n")
+			ret += fmt.Sprint(v.Name(), " ", strconv.FormatUint(uint64(stat.Mode), 8), "\n")
 		}
 
 		fmt.Println("GET: on dir")
 		fmt.Println(ret)
-
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(ret))
@@ -234,7 +230,7 @@ func serveGet(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) {
 func servePut(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) {
 
 	//no put requests for directories
-	if r.URL.Path[len(r.URL.Path) - 1] == '/' {
+	if r.URL.Path[len(r.URL.Path)-1] == '/' {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("use POST to create directory"))
 		return
@@ -279,7 +275,6 @@ func servePut(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) {
 		return
 	}
 
-
 	// set atime and mtime according to request
 	userSpace.Chtimes(requestPath, time.Unix(atime, 0), time.Unix(mtime, 0))
 
@@ -298,7 +293,7 @@ func servePost(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) 
 
 	requestPath := r.URL.Path
 
-	if r.URL.Path[len(r.URL.Path) - 1] == '/' {
+	if r.URL.Path[len(r.URL.Path)-1] == '/' {
 		err = userSpace.MkDir(requestPath, mode)
 		if err != nil {
 			serveError(w, err)
@@ -341,11 +336,10 @@ type h struct {
 	store *sandbox.UserStore
 }
 
-func (h h)ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h h) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("\n---")
 	fmt.Println(r.Method, ": ", r.URL)
 	fmt.Println(r.Header)
-
 
 	user, ok := auth(r.Header.Get("Authorization"))
 	if !ok {

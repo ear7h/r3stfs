@@ -1,8 +1,7 @@
-// Copyright 2016 the Go-FUSE Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
+// Copyright 2017 Julio. All rights reserved.
+// Use of this source code is governed by the MIT
 // license that can be found in the LICENSE file.
 
-// A Go mirror of libfuse's hello.c
 
 package main
 
@@ -12,11 +11,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/0xAX/notificator"
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"github.com/hanwen/go-fuse/fuse/pathfs"
@@ -24,42 +25,55 @@ import (
 	"r3stfs/client/log"
 	"r3stfs/client/remote"
 	"r3stfs/sandbox"
-	"github.com/0xAX/notificator"
-	"r3stfs/client/runtime"
-	"path"
 )
 
 type R3stFs struct {
 	pathfs.FileSystem
 	client *remote.Client
-	cache sandbox.Store
+	cache  sandbox.Store
 }
 
 func (rfs *R3stFs) cacheOK(name string) bool {
+	notify := func(err error) {
+		fmt.Println("cacheOK err: ", err)
+
+		e := notificator.New(notificator.Options{
+			AppName: "r3stfs",
+		}).Push("Cache Error", fmt.Sprint(err), "", notificator.UR_NORMAL)
+
+		if e != nil {
+			fmt.Println("cacheOK: notify - ", e)
+		}
+	}
+
+
 	resp, err := rfs.client.Head(name)
 	if err != nil {
-		notify := notificator.New(notificator.Options{
-			AppName: "r3stfs",
-		})
-
-		notify.Push("Remote Error", "Can't reach cache", "", notificator.UR_NORMAL)
-
-		go runtime.Exit()
+		go notify(err)
 		return false
 	}
 
-	remoteModTime, err := time.Parse(time.RFC1123, strings.Join(resp.Header["Mtime"], " "))
+	//if not exist
+	if resp.StatusCode == http.StatusNotFound {
+		rfs.cache.RemoveAll(name)
+		return true
+	}
+
+	remoteUnix, err := strconv.ParseInt(resp.Header.Get("Mtime"), 10, 64)
 	if err != nil {
+		go notify(err)
 		return true
 	}
 
 	stat, err := rfs.cache.Stat(name)
 	if err != nil {
+		go notify(err)
 		return false
 	}
 
 	// cache is outdated
-	if remoteModTime.After(stat.ModTime()) {
+	if time.Unix(remoteUnix, 0).After(stat.ModTime()) {
+		fmt.Println("cache miss")
 		return false
 	}
 
@@ -71,7 +85,6 @@ func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr,
 	defer func() {
 		log.Return(attr, status)
 	}()
-
 
 	if rfs.cacheOK(name) {
 		var err error
@@ -114,7 +127,6 @@ func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr,
 		mode = 0
 	}
 
-
 	mTime, err := strconv.ParseInt(resp.Header["Mtime"][0], 10, 64)
 	if err != nil {
 		attr, status = nil, fuse.ToStatus(err)
@@ -144,7 +156,6 @@ func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr,
 
 	mode |= syscall.S_IFREG
 
-
 	size, err := strconv.ParseInt(resp.Header["Content-Length"][0], 10, 64)
 	if err != nil {
 		size = 0
@@ -166,7 +177,6 @@ func (rfs *R3stFs) OpenDir(name string, context *fuse.Context) (dir []fuse.DirEn
 	defer func() {
 		log.Return(dir, status)
 	}()
-
 
 	resp, err := rfs.client.Get(name)
 	if err != nil {
@@ -216,7 +226,7 @@ func (rfs *R3stFs) OpenDir(name string, context *fuse.Context) (dir []fuse.DirEn
 			}
 		} else {
 			fmt.Println("making: ", p)
-			f, err := rfs.cache.OpenFile(p, os.O_CREATE | os.O_RDONLY, os.FileMode(i))
+			f, err := rfs.cache.OpenFile(p, os.O_CREATE|os.O_RDONLY, os.FileMode(i))
 			if err != nil {
 				fmt.Println("err: ", err)
 			}
@@ -261,9 +271,8 @@ use_cache:
 		return
 	}
 
-	_ = rfs.cache.RemoveAll(name)
-
-	f, err := rfs.cache.OpenFile(name, os.O_CREATE|os.O_WRONLY, os.FileMode(perm|0770))
+	//open the file using the requested permission bits
+	f, err := rfs.cache.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(perm))
 	if err != nil {
 		fmt.Println("err: ", err)
 		file, status = nil, fuse.ToStatus(err)
@@ -292,7 +301,8 @@ func (rfs *R3stFs) Create(name string, flags uint32, mode uint32, context *fuse.
 		log.Return(file, status)
 	}()
 
-	f, err := rfs.cache.OpenFile(name, os.O_CREATE|int(flags), os.FileMode(mode))
+	// create and close to register in host file system
+	f, err := rfs.cache.OpenFile(name, os.O_CREATE, os.FileMode(mode))
 	if err != nil {
 		file, status = nil, fuse.ToStatus(err)
 		return
@@ -303,6 +313,15 @@ func (rfs *R3stFs) Create(name string, flags uint32, mode uint32, context *fuse.
 		file, status = nil, fuse.ToStatus(err)
 		return
 	}
+
+	f.Close()
+
+	f, err = rfs.cache.OpenFile(name, int(flags), os.FileMode(mode))
+	if err != nil {
+		file, status = nil, fuse.ToStatus(err)
+		return
+	}
+
 
 	file, status = NewLoopbackFile(f, name, rfs.client), fuse.OK
 	return
@@ -350,6 +369,11 @@ func (rfs *R3stFs) Unlink(name string, context *fuse.Context) (status fuse.Statu
 		log.Return(status)
 	}()
 
+	_, err := rfs.client.Delete(name)
+	if err != nil {
+		status = fuse.ToStatus(err)
+	}
+
 	status = fuse.ToStatus(syscall.Unlink(rfs.cache.Abs(name)))
 	return
 }
@@ -360,10 +384,18 @@ func (rfs *R3stFs) Rmdir(name string, context *fuse.Context) (status fuse.Status
 		log.Return(status)
 	}()
 
+	_, err := rfs.client.Delete(name)
+	if err != nil {
+		status = fuse.ToStatus(err)
+		return
+	}
+
 	status = fuse.ToStatus(syscall.Rmdir(rfs.cache.Abs(name)))
 	return
 }
 
+// Access can always use a cached file as the structure is
+// always updated in the OpenDir call
 func (rfs *R3stFs) Access(name string, mode uint32, context *fuse.Context) (status fuse.Status) {
 	log.Func(name, context)
 	defer func() {
@@ -380,12 +412,29 @@ func (rfs *R3stFs) Truncate(name string, offset uint64, context *fuse.Context) (
 		log.Return(status)
 	}()
 
-	status =  fuse.ToStatus(os.Truncate(rfs.cache.Abs(name), int64(offset)))
+	err := os.Truncate(rfs.cache.Abs(name), int64(offset))
+	if err != nil {
+		status = fuse.ToStatus(err)
+		return
+	}
+
+	f, err := rfs.cache.OpenFile(name, os.O_RDONLY, 0200)
+	if err != nil {
+		status = fuse.ToStatus(err)
+		return
+	}
+
+	_, err = rfs.client.Put(name, f)
+	if err != nil {
+		status = fuse.ToStatus(err)
+		return
+	}
+
+	status = fuse.OK
 	return
 }
 
-
-func NewR3stFs(host, user, pass  string) *R3stFs {
+func NewR3stFs(host, user, pass string) *R3stFs {
 	client := remote.Login(host, user, pass)
 
 	//u, err := osuser.Current()
@@ -403,7 +452,7 @@ func NewR3stFs(host, user, pass  string) *R3stFs {
 
 	return &R3stFs{
 		FileSystem: pathfs.NewDefaultFileSystem(),
-		client: client,
-		cache: cache,
+		client:     client,
+		cache:      cache,
 	}
 }
