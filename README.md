@@ -4,20 +4,23 @@ A remote filesystem made wit FUSE and a restful back end.
 ``` bash
 $ go build ./client
 $ go build ./server
-$ echo "some text" > /var/ear7h/user/file.txt
-$ server/server
+$ echo "some text" > ./server/store/user/file.txt
+$ server/server &
 $ client/client ./fs
 ```
 
 __TODO__
-* rename files
 * comment code
 * write tests
-* refactor cache to be package
+* implement locks in server
+* implement groups in server
 * make command line util
+* implement security
+* make good tests
 
 __DONE__
 * read
 * write
 * rename
 * delete
+* refactor to remove globals

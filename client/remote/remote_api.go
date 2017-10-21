@@ -28,7 +28,7 @@ func (c *Client) Get(urlPath string) (*http.Response, error) {
 
 	u := fmt.Sprint("http://", c.host, "/", urlPath)
 
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+	req, err := newRequest(http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +42,7 @@ func (c *Client) Get(urlPath string) (*http.Response, error) {
 func (c *Client) Post(urlPath string, body io.Reader) (*http.Response, error) {
 	u := fmt.Sprint("http://", c.host, "/", urlPath)
 
-	req, err := http.NewRequest(http.MethodPost, u, body)
+	req, err := newRequest(http.MethodPost, u, body)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (c *Client) Put(urlPath string, file *os.File) (res *http.Response, err err
 	atime := stat.Mtimespec.Sec
 	mtime := stat.Mtimespec.Sec
 
-	req, err := http.NewRequest(http.MethodPut, u, file)
+	req, err := newRequest(http.MethodPut, u, file)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (c *Client) Put(urlPath string, file *os.File) (res *http.Response, err err
 func (c *Client) Head(urlPath string) (*http.Response, error) {
 	u := fmt.Sprint("http://", c.host, "/", urlPath)
 
-	req, err := http.NewRequest(http.MethodHead, u, nil)
+	req, err := newRequest(http.MethodHead, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (c *Client) Head(urlPath string) (*http.Response, error) {
 func (c *Client) Delete(urlPath string) (*http.Response, error) {
 	u := fmt.Sprint("http://", c.host, "/", urlPath)
 
-	req, err := http.NewRequest(http.MethodDelete, u, nil)
+	req, err := newRequest(http.MethodDelete, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +110,16 @@ func (c *Client) Delete(urlPath string) (*http.Response, error) {
 	req.Header.Set("Authorization", "basic "+c.b64Username)
 
 	return c.http.Do(req)
+}
+
+func newRequest(method, url string, body io.Reader) (req *http.Request, err error) {
+	req, err = http.NewRequest(method, url, body)
+	if err != nil {
+		return
+	}
+
+	req.Header.Set("User-Agent", "ear7h-FUSE-client")
+	return
 }
 
 //actual login, returns token
