@@ -14,6 +14,7 @@ import (
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"r3stfs/client/remote"
 	"r3stfs/client/log"
+	"time"
 )
 
 // LoopbackFile delegates all operations back to an underlying os.file.
@@ -52,7 +53,11 @@ func (f *loopback) String() string {
 func (f *loopback) Read(buf []byte, off int64) (res fuse.ReadResult, status fuse.Status) {
 	log.Func(f.restPath)
 	defer func() {
-		log.Return(res, status)
+		if status != fuse.OK {
+			log.Return("ERROR", res, status)
+		} else {
+			log.Return(res, status)
+		}
 	}()
 
 	f.lock.Lock()
@@ -63,22 +68,37 @@ func (f *loopback) Read(buf []byte, off int64) (res fuse.ReadResult, status fuse
 	return r, fuse.OK
 }
 
-func (f *loopback) Write(data []byte, off int64) (uint32, fuse.Status) {
+func (f *loopback) Write(data []byte, off int64) (n uint32, status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		if status != fuse.OK {
+			log.Return("ERROR", n, status)
+		} else {
+			log.Return(n, status)
+		}
+	}()
 	fmt.Println("writing: ", string(data))
 
 	f.lock.Lock()
-	n, err := f.file.WriteAt(data, off)
+	nint, err := f.file.WriteAt(data, off)
 	if err != nil {
 		fmt.Println("ERROR WRITING: ", err)
 	}
 	f.lock.Unlock()
-	return uint32(n), fuse.ToStatus(err)
+	n, status = uint32(nint), fuse.ToStatus(err)
+	return
 }
 
 func (f *loopback) Release() {
+	status := fuse.OK
+
 	log.Func(f.restPath)
 	defer func() {
-		log.Return()
+		if status != fuse.OK {
+			log.Return("ERROR")
+		} else {
+			log.Return()
+		}
 	}()
 
 	//close file
@@ -91,6 +111,7 @@ func (f *loopback) Release() {
 	fileToSend, err := os.OpenFile(name, os.O_RDONLY, 0600)
 	if err != nil {
 		fmt.Println("err", err)
+		status = fuse.ToStatus(err)
 		return
 	}
 
@@ -99,13 +120,18 @@ func (f *loopback) Release() {
 	_, err = f.remote.Put(f.restPath, fileToSend)
 	if err != nil {
 		fmt.Println(err)
+		status = fuse.ToStatus(err)
 	}
 }
 
 func (f *loopback) Flush() (status fuse.Status) {
 	log.Func(f.restPath)
 	defer func() {
-		log.Return(status)
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
 	}()
 
 
@@ -124,59 +150,122 @@ func (f *loopback) Flush() (status fuse.Status) {
 	return fuse.ToStatus(err)
 }
 
-func (f *loopback) Fsync(flags int) (code fuse.Status) {
+func (f *loopback) Fsync(flags int) (status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
+	}()
+
 	f.lock.Lock()
-	r := fuse.ToStatus(syscall.Fsync(int(f.file.Fd())))
+	status = fuse.ToStatus(syscall.Fsync(int(f.file.Fd())))
 	f.lock.Unlock()
 
-	return r
+	return
 }
 
-func (f *loopback) Flock(flags int) fuse.Status {
+func (f *loopback) Flock(flags int) (status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
+	}()
+
 	f.lock.Lock()
-	r := fuse.ToStatus(syscall.Flock(int(f.file.Fd()), flags))
+	status = fuse.ToStatus(syscall.Flock(int(f.file.Fd()), flags))
 	f.lock.Unlock()
 
-	return r
+	return
 }
 
-func (f *loopback) Truncate(size uint64) fuse.Status {
+func (f *loopback) Truncate(size uint64) (status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
+	}()
+
 	f.lock.Lock()
-	r := fuse.ToStatus(syscall.Ftruncate(int(f.file.Fd()), int64(size)))
+	status = fuse.ToStatus(syscall.Ftruncate(int(f.file.Fd()), int64(size)))
 	f.lock.Unlock()
 
-	return r
+	return
 }
 
-func (f *loopback) Chmod(mode uint32) fuse.Status {
+func (f *loopback) Chmod(mode uint32) (status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
+	}()
+
 	f.lock.Lock()
-	r := fuse.ToStatus(f.file.Chmod(os.FileMode(mode)))
+	status = fuse.ToStatus(f.file.Chmod(os.FileMode(mode)))
 	f.lock.Unlock()
 
-	return r
+	return
 }
 
-func (f *loopback) Chown(uid uint32, gid uint32) fuse.Status {
+func (f *loopback) Chown(uid uint32, gid uint32) (status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
+	}()
+
+
 	f.lock.Lock()
-	r := fuse.ToStatus(f.file.Chown(int(uid), int(gid)))
+	status = fuse.ToStatus(f.file.Chown(int(uid), int(gid)))
 	f.lock.Unlock()
 
-	return r
+	return
 }
 
-func (f *loopback) GetAttr(a *fuse.Attr) fuse.Status {
+func (f *loopback) GetAttr(a *fuse.Attr) (status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
+	}()
+
 	st := syscall.Stat_t{}
 	f.lock.Lock()
 	err := syscall.Fstat(int(f.file.Fd()), &st)
 	f.lock.Unlock()
 	if err != nil {
-		return fuse.ToStatus(err)
+		status = fuse.ToStatus(err)
+		return
 	}
 	a.FromStat(&st)
+	status = fuse.OK
 
-	return fuse.OK
+	return
 }
 
-// Utimens implemented in files_linux.go and files_darwin.go
+// Utimens - file handle based version of loopbackFileSystem.Utimens()
+func (f *loopback) Utimens(a *time.Time, m *time.Time) (status fuse.Status) {
+	//TODO implement server side attr changes
+	status = fuse.ToStatus(os.Chtimes(f.file.Name(), *a, *m))
+	return
+}
+
 
 // Allocate implemented in files_linux.go and files_darwin.go

@@ -4,10 +4,20 @@ import (
 	"runtime"
 	"fmt"
 	"time"
+	"os"
+	"io"
 )
+
+var outStream io.Writer
 
 func init() {
 	fmt.Println("will log stuff!")
+	outFile, err := os.OpenFile("log.txt", os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0666)
+	if err != nil {
+		panic(err)
+	}
+	outStream = io.MultiWriter(os.Stdout, outFile)
+
 }
 
 func Func(name string, params ...interface{}) {
@@ -22,8 +32,8 @@ func Func(name string, params ...interface{}) {
 	if name == "" {
 		name = "/"
 	}
-	fmt.Printf("%s | %s called : %s ", ts, fn, name)
-	fmt.Println(params...)
+	fmt.Fprintf(outStream, "%s | %s called : %s ", ts, fn, name)
+	fmt.Fprintln(outStream, params...)
 }
 
 func Return(params ...interface{}) {
@@ -37,6 +47,6 @@ func Return(params ...interface{}) {
 
 	fn := runtime.FuncForPC(pc).Name()
 
-	fmt.Printf("%s | %s returned: ", ts, fn)
-	fmt.Println(params...)
+	fmt.Fprintf(outStream,"%s | %s returned: ", ts, fn)
+	fmt.Fprintln(outStream, params...)
 }

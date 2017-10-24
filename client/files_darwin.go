@@ -6,13 +6,23 @@ package main
 
 import (
 	"syscall"
-	"time"
 	"unsafe"
 
 	"github.com/hanwen/go-fuse/fuse"
+
+	"r3stfs/client/log"
 )
 
-func (f *loopback) Allocate(off uint64, sz uint64, mode uint32) fuse.Status {
+func (f *loopback) Allocate(off uint64, sz uint64, mode uint32) (status fuse.Status) {
+	log.Func(f.restPath)
+	defer func() {
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
+	}()
+
 	// TODO: Handle `mode` parameter.
 
 	// From `man fcntl` on OSX:
@@ -46,7 +56,7 @@ func (f *loopback) Allocate(off uint64, sz uint64, mode uint32) fuse.Status {
 		Length     int64  // off_t
 		Bytesalloc int64  // off_t
 	}{
-		0,
+		mode,
 		0,
 		int64(off),
 		int64(sz),
@@ -59,44 +69,9 @@ func (f *loopback) Allocate(off uint64, sz uint64, mode uint32) fuse.Status {
 	f.lock.Lock()
 	_, _, errno := syscall.Syscall(syscall.SYS_FCNTL, f.file.Fd(), uintptr(syscall.F_PREALLOCATE), uintptr(unsafe.Pointer(&k)))
 	f.lock.Unlock()
+
 	if errno != 0 {
 		return fuse.ToStatus(errno)
 	}
 	return fuse.OK
-}
-
-const _UTIME_OMIT = ((1 << 30) - 2)
-
-// timeToTimeval - Convert time.Time to syscall.Timeval
-//
-// Note: This does not use syscall.NsecToTimespec because
-// that does not work properly for times before 1970,
-// see https://github.com/golang/go/issues/12777
-func timeToTimeval(t *time.Time) syscall.Timeval {
-	var tv syscall.Timeval
-	tv.Usec = int32(t.Nanosecond() / 1000)
-	tv.Sec = t.Unix()
-	return tv
-}
-
-// OSX does not have the utimensat syscall neded to implement this properly.
-// We do our best to emulate it using futimes.
-func (f *loopback) Utimens(a *time.Time, m *time.Time) fuse.Status {
-	tv := make([]syscall.Timeval, 2)
-	if a == nil {
-		tv[0].Usec = _UTIME_OMIT
-	} else {
-		tv[0] = timeToTimeval(a)
-	}
-
-	if m == nil {
-		tv[1].Usec = _UTIME_OMIT
-	} else {
-		tv[1] = timeToTimeval(m)
-	}
-
-	f.lock.Lock()
-	err := syscall.Futimes(int(f.file.Fd()), tv)
-	f.lock.Unlock()
-	return fuse.ToStatus(err)
 }

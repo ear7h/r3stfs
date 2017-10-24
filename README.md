@@ -12,11 +12,12 @@ $ client/client ./fs
 __TODO__
 * comment code
 * write tests
-* implement locks in server
-* implement groups in server
-* make command line util
+* groups in server
+    * file locks (querystring in head call)
+* command line args
 * implement security
 * make good tests
+* cache garbage collection
 
 __DONE__
 * read

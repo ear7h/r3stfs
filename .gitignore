@@ -2,6 +2,7 @@
 .DS_Store
 client/ear7h_cache
 client/client
+client/log*.txt
 server/server
 server/store
 server/test_store

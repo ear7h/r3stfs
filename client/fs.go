@@ -83,7 +83,11 @@ func (rfs *R3stFs) cacheOK(name string) bool {
 func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr, status fuse.Status) {
 	log.Func(name, context)
 	defer func() {
-		log.Return(attr, status)
+		if status != fuse.OK {
+			log.Return("ERROR", attr, status)
+		} else {
+			log.Return(attr, status)
+		}
 	}()
 
 	if rfs.cacheOK(name) {
@@ -175,7 +179,12 @@ func (rfs *R3stFs) GetAttr(name string, context *fuse.Context) (attr *fuse.Attr,
 func (rfs *R3stFs) OpenDir(name string, context *fuse.Context) (dir []fuse.DirEntry, status fuse.Status) {
 	log.Func(name, context)
 	defer func() {
-		log.Return(dir, status)
+		if status != fuse.OK {
+			log.Return("ERROR", dir, status)
+
+		} else {
+			log.Return(dir, status)
+		}
 	}()
 
 	resp, err := rfs.client.Get(name)
@@ -245,7 +254,11 @@ func (rfs *R3stFs) OpenDir(name string, context *fuse.Context) (dir []fuse.DirEn
 func (rfs *R3stFs) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, status fuse.Status) {
 	log.Func(name, flags, context)
 	defer func() {
-		log.Return(file, status)
+		if status != fuse.OK {
+			log.Return("ERROR", file, status)
+		} else {
+			log.Return(file, status)
+		}
 	}()
 
 use_cache:
@@ -296,9 +309,13 @@ use_cache:
 }
 
 func (rfs *R3stFs) Create(name string, flags uint32, mode uint32, context *fuse.Context) (file nodefs.File, status fuse.Status) {
-	log.Func(name, flags, mode, context)
+	log.Func(name, flags, "mode: " + strconv.FormatInt(int64(mode), 8), context)
 	defer func() {
-		log.Return(file, status)
+		if status != fuse.OK {
+			log.Return("ERROR", file, status)
+		} else {
+			log.Return(file, status)
+		}
 	}()
 
 	// create and close to register in host file system
@@ -330,7 +347,11 @@ func (rfs *R3stFs) Create(name string, flags uint32, mode uint32, context *fuse.
 func (rfs *R3stFs) Rename(oldName string, newName string, context *fuse.Context) (status fuse.Status) {
 	log.Func(oldName, newName, context)
 	defer func() {
-		log.Return(status)
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
 	}()
 
 	//send message to server
@@ -366,7 +387,11 @@ func (rfs *R3stFs) Rename(oldName string, newName string, context *fuse.Context)
 func (rfs *R3stFs) Unlink(name string, context *fuse.Context) (status fuse.Status) {
 	log.Func(name, context)
 	defer func() {
-		log.Return(status)
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
 	}()
 
 	_, err := rfs.client.Delete(name)
@@ -381,7 +406,11 @@ func (rfs *R3stFs) Unlink(name string, context *fuse.Context) (status fuse.Statu
 func (rfs *R3stFs) Rmdir(name string, context *fuse.Context) (status fuse.Status) {
 	log.Func(name, context)
 	defer func() {
-		log.Return(status)
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
 	}()
 
 	_, err := rfs.client.Delete(name)
@@ -397,9 +426,13 @@ func (rfs *R3stFs) Rmdir(name string, context *fuse.Context) (status fuse.Status
 // Access can always use a cached file as the structure is
 // always updated in the OpenDir call
 func (rfs *R3stFs) Access(name string, mode uint32, context *fuse.Context) (status fuse.Status) {
-	log.Func(name, context)
+	log.Func(name, "mode: " + strconv.FormatInt(int64(mode), 8), context)
 	defer func() {
-		log.Return(status)
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
 	}()
 
 	status = fuse.ToStatus(syscall.Access(rfs.cache.Abs(name), mode))
@@ -409,7 +442,11 @@ func (rfs *R3stFs) Access(name string, mode uint32, context *fuse.Context) (stat
 func (rfs *R3stFs) Truncate(name string, offset uint64, context *fuse.Context) (status fuse.Status) {
 	log.Func(name, context)
 	defer func() {
-		log.Return(status)
+		if status != fuse.OK {
+			log.Return("ERROR", status)
+		} else {
+			log.Return(status)
+		}
 	}()
 
 	err := os.Truncate(rfs.cache.Abs(name), int64(offset))
@@ -432,6 +469,18 @@ func (rfs *R3stFs) Truncate(name string, offset uint64, context *fuse.Context) (
 
 	status = fuse.OK
 	return
+}
+
+func (rfs *R3stFs) StatFs(name string) (stat *fuse.StatfsOut) {
+
+	s := syscall.Statfs_t{}
+	err := syscall.Statfs(rfs.cache.Abs(name), &s)
+	if err == nil {
+		out := &fuse.StatfsOut{}
+		out.FromStatfsT(&s)
+		return out
+	}
+	return nil
 }
 
 func NewR3stFs(host, user, pass string) *R3stFs {
