@@ -16,8 +16,8 @@ func ServeFs(addr, basepath, dirroot string, handler FsHandler) error {
 
 	h := &fsHandlerWrapper{
 		FsHandler: handler,
-		basepath: basepath,
-		dirroot: dirroot,
+		basepath:  basepath,
+		dirroot:   dirroot,
 	}
 
 	return http.ListenAndServe(addr, h)
@@ -41,16 +41,10 @@ func (h *fsHandlerWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	filename := r.URL.Path[len(h.basepath):]
 	filename = path.Join(h.basepath, filename)
 
-	headerErr := make(chan error)
-	go func() {
-		headerErr <- writeHead(r.Header, filename)
-	}()
-
-
 	var res io.ReadCloser
 	var err error
 
-	defer func(rc io.ReadCloser){
+	defer func(rc io.ReadCloser) {
 		if res != nil {
 			res.Close()
 		}
@@ -58,7 +52,7 @@ func (h *fsHandlerWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		res , err = h.HandleGet(r.Header, filename)
+		res, err = h.HandleGet(r.Header, filename)
 	case http.MethodPut:
 		var num int
 		num, err = h.HandlePut(r.Header, filename, r.Body)
@@ -66,7 +60,7 @@ func (h *fsHandlerWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		res = stringReadCloser(strconv.Itoa(num))
 	case http.MethodPost:
 		var num int
-		num, err = h.HandlePut(r.Header, filename, r.Body)
+		num, err = h.HandlePost(r.Header, filename, r.Body)
 		defer r.Body.Close()
 		res = stringReadCloser(strconv.Itoa(num))
 	case http.MethodDelete:
@@ -97,14 +91,37 @@ func (h *fsHandlerWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// timeout
 			s := fmt.Sprintf("%s i/o timed out", filename)
 			http.Error(w, s, http.StatusInternalServerError)
+		case IsNotImplemented(err):
+			s := fmt.Sprintf("%s method %s not implemented", filename, r.Method)
+			http.Error(w, s, http.StatusNotImplemented)
+		case IsUser(err):
+			s := fmt.Sprintf("%s %s", filename, err.Error())
+			http.Error(w, s, http.StatusBadRequest)
 		default:
 			// internal server error
 			log.Printf("unexpected error %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 		}
-
 		return
 	}
 
-	io.Copy(w, res)
+	// header should be written after http method handling to ensure
+	// the requested file has already been made
+	headerErr := make(chan error)
+	go func() {
+		header := w.Header()
+		headerErr <- writeHead(&header, filename)
+	}()
+
+	// copy response and check for errors
+	_, err = io.Copy(w, res)
+	if err != nil {
+		http.Error(w, "error writing response", http.StatusInternalServerError)
+	}
+
+	// check header error
+	err = <-headerErr
+	if err != nil {
+		http.Error(w, "error writing header", http.StatusInternalServerError)
+	}
 }
