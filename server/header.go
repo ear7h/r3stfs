@@ -29,7 +29,8 @@ Mtime: 15324230 // Unix time
 //		asserting the old mtime and atime
 
 // write header based on specific file
-func writeHead(header http.Header, localFile string) (error) {
+func writeHead(header *http.Header, localFile string) (error) {
+	header.Set("Trailer", "File-Mode Last-Modified Mtime Atime")
 
 	fi, err := os.Stat(localFile)
 	if err != nil {
