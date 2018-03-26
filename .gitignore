@@ -7,3 +7,6 @@ server/server
 server/store
 server/test_store
 dump
+
+
+cmd/r3stfs-server/r3stfs-server
