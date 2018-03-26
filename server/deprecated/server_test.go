@@ -1,16 +1,17 @@
-package main
+package deprecated
 
 import (
 	"fmt"
 	"net/http"
 	"os"
 	"path"
-	"r3stfs/sandbox"
 	"testing"
 	"io"
 	"strings"
 	"time"
 	"strconv"
+
+	"github.com/ear7h/r3stfs/sandbox"
 )
 
 const TEST_STORE = "test_store"

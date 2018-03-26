@@ -2,7 +2,7 @@
 // Use of this source code is governed by the MIT
 // license that can be found in the LICENSE file.
 
-package main
+package deprecated
 
 import (
 	"encoding/base64"
@@ -16,7 +16,12 @@ import (
 	"syscall"
 	"time"
 
-	"r3stfs/sandbox"
+	"github.com/ear7h/r3stfs/sandbox"
+	"path"
+	"io/ioutil"
+	"encoding/json"
+	"bufio"
+	"bytes"
 )
 
 //
@@ -48,73 +53,6 @@ func getMode(r *http.Request) (os.FileMode, error) {
 	fmt.Println("mode ", os.FileMode(int32(i)))
 
 	return os.FileMode(int32(i)), nil
-}
-
-/*
-HEAD /dir/file.txt
-
-200
-File-Mode: 0777
-Is-Dir: false
-Last-Modified: Mon, 02 Jan 2006 15:04:05 MST //rfc 1123
-Atime: 15324230 // Unix time
-Mtime: 15324230 // Unix time
-Content-Length: 1000 //in bytes
-*/
-
-// write file attributes to passed ResponseWriter's header
-//
-// writeHead will make one write to the errc channel
-// a signal to the caller to proceed with io
-// 		if it is not nil don't do io
-// and a read
-//		this is to hang until the caller is done with io before
-//		asserting the old mtime and atime
-func writeHead(w http.ResponseWriter, userSpace sandbox.Store, file string, errc chan error, wg *sync.WaitGroup) {
-	defer close(errc)
-
-	fi, err := userSpace.Stat(file)
-	if err != nil {
-		fmt.Println("wh there was error")
-		errc <- err
-		fmt.Println("wh err sent")
-		return
-	}
-	// signal the caller it is okay to access files
-
-	stat, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		fmt.Println("wh there was error")
-		errc <- err
-		fmt.Println("wh err sent")
-	}
-
-	fmt.Println("wh no error")
-	errc <- nil
-	atime := stat.Atimespec.Sec
-	mtime := stat.Mtimespec.Sec
-
-	w.Header().Set("File-Mode", strconv.FormatUint(uint64(stat.Mode), 8))
-	w.Header().Set("Is-Dir", strconv.FormatBool(fi.Mode().IsDir()))
-	w.Header().Set("Last-Modified", fi.ModTime().Format(time.RFC1123))
-	w.Header().Set("Mtime", strconv.FormatInt(mtime, 10))
-	w.Header().Set("Atime", strconv.FormatInt(atime, 10))
-
-	if !fi.IsDir() {
-		w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
-	}
-
-	fmt.Println("headers written\n", w.Header())
-
-	fmt.Println("writeHead: waiting send finish")
-	wg.Done()
-	wg.Wait()
-	fmt.Println("writeHead: proceeding")
-
-	// assert old times
-	userSpace.Chtimes(file,
-		time.Unix(stat.Atimespec.Unix()),
-		time.Unix(stat.Atimespec.Unix()))
 }
 
 // Authorization:name pass
@@ -193,33 +131,42 @@ func serveGet(w http.ResponseWriter, r *http.Request, userSpace sandbox.Store) {
 		return
 	}
 
-	if stat.IsDir() {
+	/*
+	quote from my comp sci prof:
+	linux was made with love for the world and humanity
+	 */
+
+	switch {
+	case (stat.Mode() | os.ModeDir) > 0: //directory
 		dir, err := f.Readdir(0)
 		if err != nil {
 			serveError(w, err)
 		}
 
-		ret := ""
-		for _, v := range dir {
-
-			stat := v.Sys().(*syscall.Stat_t)
-			ret += fmt.Sprint(v.Name(), " ", strconv.FormatUint(uint64(stat.Mode), 8), "\n")
-		}
-
 		fmt.Println("GET: on dir")
-		fmt.Println(ret)
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(ret))
 
-		// signal writeHead we're done with io
-		c <- nil
-		return
-	}
+		var buf string
 
-	_, err = io.Copy(w, f)
-	if err != nil {
-		serveError(w, err)
+		for _, v := range dir {
+			stat := v.Sys().(*syscall.Stat_t)
+
+			buf = fmt.Sprint(v.Name(), " ", strconv.FormatUint(uint64(stat.Mode), 8), "\n")
+			// logging
+			fmt.Println(buf)
+			w.Write([]byte(buf))
+		}
+
+	case (stat.Mode() | os.ModeType) == 0: // file
+		w.WriteHeader(http.StatusOK)
+		_, err = io.Copy(w, f)
+		if err != nil {
+			serveError(w, err)
+		}
+
+	default:
+		serveError(w, fmt.Errorf("file mode not supported"))
 	}
 
 	// signal writeHead we're done with io
@@ -386,14 +333,8 @@ func (h h) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func main() {
 	fmt.Println("server starting")
 
-	us, err := sandbox.NewUserStore("store")
-	if err != nil {
-		panic(err)
-	}
-
 	fmt.Println("store created")
 
-	http.ListenAndServe(":8080", h{
-		store: us,
-	})
+	err := ServeFs(":8080", "", "./store", &R3stFsHandler{})
+	panic(err)
 }

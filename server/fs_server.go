@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"net/http"
@@ -13,6 +13,21 @@ import (
 )
 
 func ServeFs(addr, basepath, dirroot string, handler FsHandler) error {
+	_, err := os.Stat(dirroot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			err := os.Mkdir(dirroot, 0700)
+			if err != nil {
+				panic(err)
+			}
+
+			fmt.Printf("root %s created", dirroot)
+		} else {
+			panic(err)
+		}
+	} else {
+		fmt.Printf("root %s already exists", dirroot)
+	}
 
 	h := &fsHandlerWrapper{
 		FsHandler: handler,

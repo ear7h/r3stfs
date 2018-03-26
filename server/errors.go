@@ -1,4 +1,4 @@
-package main
+package server
 
 type NotImplementedError struct {
 	msg string
